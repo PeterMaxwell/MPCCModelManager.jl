@@ -1,0 +1,13 @@
+name = "MPCCModelManager"
+uuid = "37930e1d-5501-4f00-9319-9ec29670b665"
+authors = ["Peter Maxwell"]
+version = "0.1.0"
+
+[compat]
+julia = "1.5"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
