@@ -1,7 +1,27 @@
 
 # TODO this seems to annoyingly return a vector of type Any.  Fix me.
 
-# Note: even if returning a scalar, the output is in an array... artefact of build_function()
+
+"""
+    mpccmodel_build_fn_from_defn(dimspec, defnnum, x, pr, ps)
+
+Assemble `f`, `ce`, `ci`, and `F` Julia native functions from Symbolic
+definition and returns both non-indexed and indexed variants. Generally no need
+to call directly as this is called from `mpccmodel_load_defn_from_file()`.
+
+**NOTE:** To understand how this works, one should also play with a few examples
+of`build_function()` in Symbolics.jl.  The output from `build_function()` is a
+2-element vector whereby the first element is the standard function adn the
+second is a mutating version of the same function. Hence the formulation in the
+code here.
+
+# Arguments
+- `dimspec::MPCCDimSpec`: The dimension specifications for the proram.
+- `defnnum::MPCCDefinition`: The Symbolics.jl Num definitions of the
+  expressions.
+- `x`, `pr`, `ps`: Symbolics.jl Num variables for x, pr, ps.
+
+"""
 function mpccmodel_build_fn_from_defn(dimspec::MPCCDimSpec, defnnum::MPCCDefinition, x, pr, ps)
     
     @unpack n, q, l, me, mi = dimspec
@@ -75,7 +95,13 @@ end
 
 
 
+"""
+    mpccmodel_build_parameterisation(defns, t)
 
+Build parameterisation from `defns` and Symbolics Num `t`, returns struct with
+Julia native functions including derivatives.
+
+"""
 function mpccmodel_build_parameterisation(defns::Vector{MPCCParameterisationDefn}, t::Num)
 
     len_defns = length(defns)
