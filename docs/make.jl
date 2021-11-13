@@ -15,3 +15,8 @@ makedocs(
         ]
     ]
 )
+
+
+deploydocs(
+    repo = "github.com/PeterMaxwell/MPCCModelManager.jl.git",
+)
