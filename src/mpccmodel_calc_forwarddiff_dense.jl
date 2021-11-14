@@ -7,16 +7,25 @@
 # Need to ensure convert() is used consistently
 
 
-# TODO review: for pr derivatives, should we take derivative first then use common code to calc grad?
-# TODO need to sort CartesianIndex stuff for F
+
+    
 
 
 
 
+"""
+    mpccmodel_setup_forwarddiff_dense(config::MPCCModelConfig)
 
 
+Accepts model config and returns a struct with all the nice Julia functions to
+calculate Jacobians, Hessians, and parametric derivatives using
+ForwardDiff.jl.
 
-
+Both standard and mutating functions are constructed. Most of the functions
+accept an index as the last argument to specify a subset of the constraints.
+For F constraints, this should be a vector of either tuple pairs or
+CartesianIndexes.
+"""
 function mpccmodel_setup_forwarddiff_dense(config::MPCCModelConfig)
 
     @unpack dimspec, fns = config
