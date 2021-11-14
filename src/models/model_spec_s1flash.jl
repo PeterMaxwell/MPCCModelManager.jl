@@ -3,7 +3,7 @@
 # Minor modifications @PeterMaxwell 20211114 (compiles, but otherwise not tested correctness)
 
 
-function mm_specCs1flash_dimspec()::MPCCDimSpec
+function mm_spec_s1flash_dimspec()::MPCCDimSpec
     dimspec = MPCCDimSpec(21, 2, 2, 18, 20, 1, 0)   
     return dimspec
 end
@@ -16,7 +16,7 @@ end
 # Number of discrete parameters for PMPCC
 
 
-function mm_specCs1flash_defn(x, pr, ps)
+function mm_spec_s1flash_defn(x, pr, ps)
 
     # PM20211114: some modifications are a work-around for a bug in Symbolics.jl - https://github.com/JuliaSymbolics/Symbolics.jl/issues/319
 
@@ -73,7 +73,7 @@ end
 
 
 
-function mm_specCs1flash_nzmask()::MPCCModelNZMask
+function mm_spec_s1flash_nzmask()::MPCCModelNZMask
     nczmask = MPCCModelNZMask(
         # ce
         [   Set{Int64}([15]),
@@ -128,19 +128,19 @@ function mm_specCs1flash_nzmask()::MPCCModelNZMask
 end
 
 
-function mm_specCs1flash_testvectors()
+function mm_spec_s1flash_testvectors()
     return Vector{MPCCModelTestVector}(undef, 0)
 end
 
 
-function mm_specCs1flash_knownsols()
+function mm_spec_s1flash_knownsols()
 
     return []
 end
 
 
 
-function mm_specCs1flash_parameterisations(t)
+function mm_spec_s1flash_parameterisations(t)
 
     defn1 = MPCCParameterisationDefn(
             Vector{Num}([ t ]),

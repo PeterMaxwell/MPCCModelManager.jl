@@ -137,6 +137,7 @@ function mpccmodel_load_defn_from_file(model_id::String)
 
     # Filename of the model we want to import, include() it
     src_filename = joinpath(@__DIR__, "models", "model_spec_$(model_id).jl")
+    println("Loading model_spec_$(model_id).jl")
     include(src_filename)
 
     # We need to call two specific functions in the included file.

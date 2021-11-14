@@ -19,7 +19,20 @@ const Opt{T} = Union{Missing,T}
 
 
 
-# Information on the dimensions of a problem
+"""
+MPCCDimSpec
+
+Determines the dimensions of a program.
+
+* n: number of spatial dimensions
+* q: columns in F (number of complementarity contraints)
+* l: row in F (number of expressions in each complementarity contraint)
+* me: numebr of equality constraints
+* me: numebr of inequality constraints
+* r: number of continuous parameters
+* s: number of integer parameters
+
+"""
 struct MPCCDimSpec
     n::Int64		# Dimension of spatial variables
     q::Int64		# Columns in F
@@ -43,9 +56,18 @@ end
 
 
 
+"""
+struct MPCCDefinition
 
+Definition of the MPCC/NLP containing Symbolics Num expressions for f, ce, ci,
+and F.
 
+* f: objective function
+* ce: vector of equality constraints ( == 0 )
+* ci: vector of inequality constraints ( >= 0 )
+* F: matrix l-by-q of complementarity constraints ( >= 0 )
 
+"""
 struct MPCCDefinition
     f::Num
     ce::Vector{Num}
@@ -55,7 +77,13 @@ end
 
 
 
-# Core functions defining a model, returns (possibly indexed subselection of vectors) of functions 
+"""
+MPCCFunctions
+
+A MPCCDefinition compiled into functions. This contains both standard and
+mutating functions, and individual elements encoded as a function within a
+vector or matrix.
+"""
 struct MPCCFunctions
     f::Function
     f!::Function
@@ -79,7 +107,12 @@ end
 
 
 
-# Struct to state what should be evaluated
+"""
+MPCCPointEvalReq
+
+When making a request to evaluate several things in one request, this bitmask
+determines what will be evaluated.
+"""
 struct MPCCPointEvalReq
     f::Bool
     ce::Bool
@@ -114,7 +147,11 @@ end
 
 
 
-# Evaluation results of a problem at a point
+"""
+MPCCPointEval
+
+Contains results of a point evaluation.
+"""
 struct MPCCPointEval{T <: AbstractFloat}
     f::Opt{T}
     ce::Opt{Vector{T}}                          # Vector of length me
@@ -224,7 +261,11 @@ struct MPCCModelTestVector{R <: Real, S <: Real, T <: Real}
 end
 
 
+"""
+MPCCParameterisationDefn
 
+The definition for a parameterisation of a model, i.e. how the `pr`` depend on `t`.
+"""
 struct MPCCParameterisationDefn{R <: Real}
     pr::Vector{Num}
     # prdt::Num
@@ -233,6 +274,11 @@ struct MPCCParameterisationDefn{R <: Real}
 end
 
 
+"""
+MPCCParameterisationFunctions
+
+Compilation of `MPCCParameterisationFunctions` into Julia functions, including derivative.
+"""
 struct MPCCParameterisationFunctions
     pr::Function            # t -> Vector pr
     pr!::Function
@@ -241,7 +287,12 @@ struct MPCCParameterisationFunctions
 end
 
 
+"""
+MPCCParameterisations
 
+Collection of Num `t` along with definitions of parameterisations and their
+compilation.
+"""
 struct MPCCParameterisations
     t::Num  # Symbolics variable
     defns::Vector{MPCCParameterisationDefn}
@@ -250,7 +301,13 @@ end
 
 
 
+"""
+MPCCModelConfig
 
+Model config contains the Num variables for `x`, `pr`, `ps` along with the
+`MPCCDimSpec`, definition, compiled definition, any test vectors, any known
+solutions, and parameterisations. Basically everything that specifies a model.
+"""
 struct MPCCModelConfig
     x::Vector{Num}      # Symbolics variables
     pr::Vector{Num}     # Symbolics variables
@@ -266,8 +323,12 @@ end
 
 
 
-# Notes: add additional methods to handle calls to MPCCModel functions with only t parameter.
 
+"""
+MPCCModel
+
+A `MPCCModelConfig` compiled to produce the derivatives we want.
+"""
 struct MPCCModel
     config::MPCCModelConfig
     f::Function
