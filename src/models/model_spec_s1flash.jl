@@ -144,7 +144,7 @@ function mm_spec_s1flash_parameterisations(t)
 
     defn1 = MPCCParameterisationDefn(
             Vector{Num}([ t ]),
-            (380, 400),               # tspan
+            (380.0, 400.0),               # tspan
             "Standard"    
         )
 

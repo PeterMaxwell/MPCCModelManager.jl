@@ -7,7 +7,6 @@ end
 
 
 function mm_spec_kj6_defn(x, pr, ps)
-
     f = exp(-x[1]+x[2])
 
     ce = Vector{Num}()
@@ -73,7 +72,6 @@ end
 
 
 function mm_spec_kj6_parameterisations(t)
-
     defn1 = MPCCParameterisationDefn(
             Vector{Num}([ t ]),
             (-5.0, 2.0),

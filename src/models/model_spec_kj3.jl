@@ -81,3 +81,15 @@ function mm_spec_kj3_knownsols()
     return [ local_kj3_knownsol_1, local_kj3_knownsol_2 ]
 end
 
+
+
+function mm_spec_kj3_parameterisations(t)
+    defn1 = MPCCParameterisationDefn(
+            Vector{Num}([ t ]),
+            (-5.0, 5.0),
+            "Standard"    
+        )
+
+    return  Vector{MPCCParameterisationDefn}( [ defn1 ] )
+end
+

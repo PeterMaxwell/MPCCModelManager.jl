@@ -1,5 +1,9 @@
 
 
+
+
+
+
 function mm_spec_kj1_dimspec()::MPCCDimSpec
     dimspec = MPCCDimSpec(2, 1, 2, 0, 0, 1, 0)
     return dimspec
@@ -7,7 +11,7 @@ end
 
 
 function mm_spec_kj1_defn(x, pr, ps)
-    f = (x[1] - pr[1])^2 (x[2] + pr[1])^2
+    f = (x[1] - pr[1])^2 + (x[2] + pr[1])^2
 
     ce = Vector{Num}()
 
@@ -23,20 +27,21 @@ end
 
 
 function mm_spec_kj1_nzmask()::MPCCModelNZMask
-    nz_mask = MPCCModelNZMask(
-        # ce
-        [],
-        # ci
-        [   Set{Int64}([1, 2]),
-            Set{Int64}([1]) ],
-        # F
-        [ 
-            # F1
-            [   Set{Int64}([1]) ],
-            # F2
-            [   Set{Int64}([2]) ] 
-        ] )    
-    return nz_mask
+    # nz_mask = MPCCModelNZMask(
+    #     # ce
+    #     [],
+    #     # ci
+    #     [   Set{Int64}([1, 2]),
+    #         Set{Int64}([1]) ],
+    #     # F
+    #     [ 
+    #         # F1
+    #         [   Set{Int64}([1]) ],
+    #         # F2
+    #         [   Set{Int64}([2]) ] 
+    #     ] )    
+    # return nz_mask
+    return Vector{MPCCModelNZMask}(undef, 0)
 end
 
 
