@@ -20,7 +20,7 @@ function mm_spec_s1flash_defn(x, pr, ps)
 
     # PM20211114: some modifications are a work-around for a bug in Symbolics.jl - https://github.com/JuliaSymbolics/Symbolics.jl/issues/319
 
-    # PM20211114: Constants. PM, modified to indluce prefix 'c' because F was conflicting with the F constraints
+    # PM20211114: Constants. PM, modified to include prefix 'c' because F was conflicting with the F constraints
     cF = 1
     cA = [3.97786; 4.00139; 3.93002]
     cB = [1064.84; 1170.874; 1182.774]

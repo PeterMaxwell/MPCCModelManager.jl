@@ -264,7 +264,7 @@ end
 """
 MPCCParameterisationDefn
 
-The definition for a parameterisation of a model, i.e. how the `pr`` depend on `t`.
+The definition for a parameterisation of a model, i.e. how the `pr` depends on `t`.
 """
 struct MPCCParameterisationDefn{R <: Real}
     pr::Vector{Num}
