@@ -12,6 +12,12 @@ RuntimeGeneratedFunctions.init(@__MODULE__)
 
 @warn "Changed gradients from column to row vectors"
 
+
+# Shit we might provide a method for using our custom types
+import Base.show
+
+
+
 include("mpccmodel_common.jl")
 include("mpccmodel_proc_model.jl")
 include("mpccmodel_calc_forwarddiff_dense.jl")

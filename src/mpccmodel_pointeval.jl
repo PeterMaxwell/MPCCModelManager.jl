@@ -1,6 +1,6 @@
 
 
-function mpccmodel_pointeval_basic(model::MPCCModel, ptevalreq::MPCCPointEvalReq, x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}) where {S <: Real, T <: Real}
+function mpccmodel_pointeval_basic(model::AbstractMPCCModel, ptevalreq::MPCCPointEvalReq, x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}) where {S <: Real, T <: Real}
 
     # std entries
     if ( ptevalreq.f )

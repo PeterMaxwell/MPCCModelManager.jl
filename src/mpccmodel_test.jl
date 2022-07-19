@@ -1,6 +1,6 @@
 
 
-function mpccmodel_test_testvectors_evalpt_basic(model_cfg::MPCCModelConfig, model::MPCCModel)
+function mpccmodel_test_testvectors_evalpt_basic(model_cfg::MPCCModelConfig, model::AbstractMPCCModel)
 
     ptevalreq = MPCCPointEvalReq()
 

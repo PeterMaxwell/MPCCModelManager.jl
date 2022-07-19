@@ -1,5 +1,8 @@
 
 
+
+# TODO 20220708: maybe change function names gradxx to jacxx
+
 # TODO Change Vector{Num} to either Symbolics.Arr{Num, 1} or something more general. May require some finessing
 
 
@@ -53,6 +56,13 @@ function MPCCDimSpec(dict::Dict)
         dict["s"]
     )
 end
+
+
+function show(io::IO, ::MIME"text/plain", dimspec::MPCCDimSpec)
+    print("DimSpec[n=$(dimspec.n), me=$(dimspec.me), me=$(dimspec.mi), q=$(dimspec.q), l=$(dimspec.l), r=$(dimspec.r), s=$(dimspec.s)]")
+end
+
+
 
 
 
@@ -324,12 +334,19 @@ end
 
 
 
+
+abstract type AbstractMPCCModel end
+abstract type AbstractMPCCModelDense <: AbstractMPCCModel end
+abstract type AbstractMPCCModelSparse <: AbstractMPCCModel end
+
+
 """
-MPCCModel
+MPCCModelDenseForwardDiff
 
 A `MPCCModelConfig` compiled to produce the derivatives we want.
+This version uses ForwardDiff.jl and produces dense matrices.
 """
-struct MPCCModel
+struct MPCCModelDenseForwardDiff <: AbstractMPCCModelDense
     config::MPCCModelConfig
     f::Function
     f!::Opt{Function}
@@ -378,6 +395,108 @@ struct MPCCModel
     gradFdp::Function
     gradFdp!::Opt{Function}
 end
+
+
+
+
+# gradf::Opt{Vector{T}}                       # Vector of length n
+# gradce::Opt{Matrix{T}}                      # Changed 20211029: now matrix of me by n
+# gradci::Opt{Matrix{T}}                      # Changed 20211029: now matrix of mi by n
+# gradF::Opt{Matrix{Vector{T}}}               # Matrix of dim l x q of n length vectors (the gradients wrt x)
+# hessf::Opt{Matrix{T}}                       # Matrix dim n x n
+# hessce::Opt{Vector{Matrix{T}}}              # Vector of length me of 2d Hessian matrices
+# hessci::Opt{Vector{Matrix{T}}}              # Vector of length mi of 2d Hessian matrices
+# hessF::Opt{Matrix{Matrix{T}}}               # Matrix of dim l x q of 2d Hessian matrices
+# fdp::Opt{Vector{T}}                         # Vector of length r
+# cedp::Opt{Vector{Vector{T}}}                # Vector of length r of vectors of length me
+# cidp::Opt{Vector{Vector{T}}}                # Vector of length r of vectors of length mi
+# Fdp::Opt{Vector{Matrix{T}}}                 # Vector of length r of matrix of dim l x q
+# gradfdp::Opt{Vector{Vector{T}}}             # Vector of length r of gradients of f/dp (vectors of length n)
+# gradcedp::Opt{Vector{Matrix{T}}}            # Vector of length r of gradce, each /dp
+# gradcidp::Opt{Vector{Matrix{T}}}            # Vector of length r of gradci, each /dp
+# gradFdp::Opt{Vector{Matrix{Vector{T}}}}     # Vector of length r of gradF, each /dp
+
+
+struct MPCCModelSparseSym <: AbstractMPCCModelSparse
+    config::MPCCModelConfig
+    sparsity_gradf::SparseMatrixCSC     # {Bool, Int64}
+    sparsity_gradce::SparseMatrixCSC
+    sparsity_gradci::SparseMatrixCSC
+    sparsity_gradF::Matrix{SparseMatrixCSC}
+    sparsity_hessf::SparseMatrixCSC
+    sparsity_hessce::Vector{SparseMatrixCSC}
+    sparsity_hessci::Vector{SparseMatrixCSC}
+    sparsity_hessF::Matrix{SparseMatrixCSC}
+    sparsity_gradfdp::Vector{SparseMatrixCSC}
+    sparsity_gradcedp::Vector{SparseMatrixCSC}
+    sparsity_gradcidp::Vector{SparseMatrixCSC}
+    sparsity_gradFdp::Vector{Matrix{SparseMatrixCSC}}
+    gradf_sparse_num::SparseMatrixCSC
+    gradce_sparse_num::SparseMatrixCSC
+    gradci_sparse_num::SparseMatrixCSC
+    gradF_sparse_num::Matrix{SparseMatrixCSC}
+    hessf_sparse_num::SparseMatrixCSC
+    hessce_sparse_num::Vector{SparseMatrixCSC}
+    hessci_sparse_num::Vector{SparseMatrixCSC}
+    hessF_sparse_num::Matrix{SparseMatrixCSC}
+    fdp_sparse_num::Vector
+    cedp_sparse_num::Vector
+    cidp_sparse_num::Vector
+    Fdp_sparse_num::Vector{Matrix}
+    gradfdp_sparse_num::Vector{SparseMatrixCSC}
+    gradcedp_sparse_num::Vector{SparseMatrixCSC}
+    gradcidp_sparse_num::Vector{SparseMatrixCSC}
+    gradFdp_sparse_num::Vector{Matrix{SparseMatrixCSC}}
+    f::Function
+    f!::Opt{Function}
+    ce::Function
+    ce!::Opt{Function}
+    ci::Function
+    ci!::Opt{Function}
+    F::Function
+    F!::Opt{Function}
+    # Fq::Function
+    # Fq!::Opt{Function}
+    gradf::Function
+    gradf!::Opt{Function}
+    gradce::Function
+    gradce!::Opt{Function}
+    gradci::Function
+    gradci!::Opt{Function}
+    gradF::Function
+    gradF!::Opt{Function}
+    # gradFq::Function
+    # gradFq!::Opt{Function}
+    hessf::Function
+    hessf!::Opt{Function}
+    hessce::Function
+    hessce!::Opt{Function}
+    hessci::Function
+    hessci!::Opt{Function}
+    hessF::Function
+    hessF!::Opt{Function}
+    # hessFq::Function
+    # hessFq!::Opt{Function}
+    fdp::Function
+    fdp!::Opt{Function}
+    cedp::Function
+    cedp!::Opt{Function}
+    cidp::Function
+    cidp!::Opt{Function}
+    Fdp::Function
+    Fdp!::Opt{Function}
+    gradfdp::Function
+    gradfdp!::Opt{Function}
+    gradcedp::Function
+    gradcedp!::Opt{Function}
+    gradcidp::Function
+    gradcidp!::Opt{Function}
+    gradFdp::Function
+    gradFdp!::Opt{Function}
+end
+
+
+
 
 
 

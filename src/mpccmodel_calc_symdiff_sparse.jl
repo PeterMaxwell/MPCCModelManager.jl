@@ -1,6 +1,12 @@
 
 
+# Should take a specification of indexing and return the sparsity and functions.  User may then call multiple times.
+
+
 function mpccmodel_setup_symdiff_sparse(config::MPCCModelConfig)
+
+    # NOTE indexed versions will be slower as they call, sequentially, a vector of
+    # already built functions, in sequence.
 
     @unpack dimspec, defn, fns = config
     @unpack n, q, l, me, mi, r, s = config.dimspec
@@ -9,18 +15,41 @@ function mpccmodel_setup_symdiff_sparse(config::MPCCModelConfig)
     s_pr = config.pr
     s_ps = config.ps
 
+    # TEMPORARY FIX 202207 until Symbolics.jl fixes sparsity detection code for Hessians.
+    # We must substitute scalar variables in place of the pr[i], then do the calcs.
+    # Otherwise it won't work
+
+    @assert (r == 1) "Temporary fix restricts to one parameter"
+    @variables p1
+    dict_subst = Dict([ s_pr[1] => p1 ])
+    fixup_defn_f_num = Symbolics.substitute(defn.f, dict_subst)
+    fixup_defn_ce_num = Symbolics.substitute(defn.ce, dict_subst)
+    fixup_defn_ci_num = Symbolics.substitute(defn.ci, dict_subst)
+    fixup_defn_F_num = Symbolics.substitute(defn.F, dict_subst)
+
+
     # We need to setup the num arrays for the sparse jacobian and hessians
     # Note that although SparseMatrixCSC is used consistently below, most of these
     # are vectors; Symbolics spits out the mtrx type and can't be bothered converting
 
     # grad entries
-    gradf_sparse_num = transpose( Symbolics.sparsejacobian([ defn.f ], s_x) )
-    gradce_sparse_num = transpose( Symbolics.sparsejacobian( defn.ce, s_x ) )
-    gradci_sparse_num = transpose( Symbolics.sparsejacobian( defn.ci, s_x ) )
+    gradf_sparse_num = Symbolics.sparsejacobian([ fixup_defn_f_num ], s_x)
+    gradce_sparse_num = Symbolics.sparsejacobian(fixup_defn_ce_num, s_x)
+    gradci_sparse_num = Symbolics.sparsejacobian(fixup_defn_ci_num, s_x)
     gradF_sparse_num = Matrix{SparseMatrixCSC}(undef, l, q)
     for lp_q=1:q
         for lp_l=1:l
-            gradF_sparse_num[lp_l, lp_q] = transpose( Symbolics.sparsejacobian( [ defn.F[lp_l, lp_q] ], s_x ) )
+            gradF_sparse_num[lp_l, lp_q] = Symbolics.sparsejacobian([ fixup_defn_F_num[lp_l, lp_q] ], s_x)
+        end
+    end
+
+    sparsity_gradf = Symbolics.jacobian_sparsity([ fixup_defn_f_num ], s_x)
+    sparsity_gradce = Symbolics.jacobian_sparsity(fixup_defn_ce_num, s_x)
+    sparsity_gradci = Symbolics.jacobian_sparsity(fixup_defn_ci_num, s_x)
+    sparsity_gradF = Matrix{SparseMatrixCSC}(undef, l, q)
+    for lp_q=1:q
+        for lp_l=1:l
+            sparsity_gradF[lp_l, lp_q] = Symbolics.jacobian_sparsity([ fixup_defn_F_num[lp_l, lp_q] ], s_x)
         end
     end
 
@@ -28,22 +57,47 @@ function mpccmodel_setup_symdiff_sparse(config::MPCCModelConfig)
     println("gradce: ", gradce_sparse_num)
     println("gradci: ", gradci_sparse_num)
     println("gradF: ", gradF_sparse_num)
-
+    println("sparsity_gradf: ", sparsity_gradf)
+    println("sparsity_gradce: ", sparsity_gradce)
+    println("sparsity_gradci: ", sparsity_gradci)
+    println("sparsity_gradF: ", sparsity_gradF)
+    println("")
 
     # hess entries
-    hessf_sparse_num = Symbolics.sparsehessian(defn.f, s_x)
+    # Second TEMPORARY FIX: hessian doesn't work well in Symbolics.jl, so we
+    # simulate by doing two jacobian calcs.
+
+    jacf_dense_num = Symbolics.jacobian([ fixup_defn_f_num ], s_x)
+    hessf_sparse_num = Symbolics.sparsejacobian(vec(jacf_dense_num), s_x)
+    sparsity_hessf = Symbolics.jacobian_sparsity(vec(jacf_dense_num), s_x)
+    # hessf_sparse_num = Symbolics.sparsehessian(defn.f, s_x)
+
     hessce_sparse_num = Vector{SparseMatrixCSC}(undef, me)
+    sparsity_hessce = Vector{SparseMatrixCSC}(undef, me)
     for lp_ce=1:me
-        hessce_sparse_num[lp_ce] = Symbolics.sparsehessian(defn.ce[lp_ce], s_x)
+        jacce_dense_num = Symbolics.jacobian([ fixup_defn_ce_num[lp_ce] ], s_x)
+        hessce_sparse_num[lp_ce] = Symbolics.sparsejacobian(vec(jacce_dense_num), s_x)        
+        sparsity_hessce[lp_ce] = Symbolics.jacobian_sparsity(vec(jacce_dense_num), s_x)        
+        # hessce_sparse_num[lp_ce] = Symbolics.sparsehessian(defn.ce[lp_ce], s_x)
     end
+
     hessci_sparse_num = Vector{SparseMatrixCSC}(undef, mi)
+    sparsity_hessci = Vector{SparseMatrixCSC}(undef, mi)
     for lp_ci=1:mi
-        hessci_sparse_num[lp_ci] = Symbolics.sparsehessian(defn.ci[lp_ci], s_x)
+        jacci_dense_num = Symbolics.jacobian([ fixup_defn_ci_num[lp_ci] ], s_x)
+        hessci_sparse_num[lp_ci] = Symbolics.sparsejacobian(vec(jacci_dense_num), s_x)
+        sparsity_hessci[lp_ci] = Symbolics.jacobian_sparsity(vec(jacci_dense_num), s_x)
+        # hessci_sparse_num[lp_ci] = Symbolics.sparsehessian(defn.ci[lp_ci], s_x)
     end
+
     hessF_sparse_num = Matrix{SparseMatrixCSC}(undef, l, q)
+    sparsity_hessF = Matrix{SparseMatrixCSC}(undef, l, q)
     for lp_q=1:q
         for lp_l=1:l
-            hessF_sparse_num[lp_l, lp_q] = Symbolics.sparsehessian(defn.F[lp_l, lp_q], s_x)
+            jacF_dense_num = Symbolics.jacobian([ fixup_defn_F_num[lp_l, lp_q] ], s_x)
+            hessF_sparse_num[lp_l, lp_q] = Symbolics.sparsejacobian(vec(jacF_dense_num), s_x)
+            sparsity_hessF[lp_l, lp_q] = Symbolics.jacobian_sparsity(vec(jacF_dense_num), s_x)
+            # hessF_sparse_num[lp_l, lp_q] = Symbolics.sparsehessian(defn.F[lp_l, lp_q], s_x)
         end
     end
 
@@ -51,24 +105,33 @@ function mpccmodel_setup_symdiff_sparse(config::MPCCModelConfig)
     println("hessce: ", hessce_sparse_num)
     println("hessci: ", hessci_sparse_num)
     println("hessF: ", hessF_sparse_num)
+    println("sparsity_hessf: ", sparsity_hessf)
+    println("sparsity_hessce: ", sparsity_hessce)
+    println("sparsity_hessci: ", sparsity_hessci)
+    println("sparsity_hessF: ", sparsity_hessF)
+    println("")
 
-
-    # dp entries
+    # dp entries  TEMP edit to math issues above re Symbolics.jl
     fdp_sparse_num = Vector{Num}(undef, r)
     for lp_r=1:r
-        fdp_sparse_num[lp_r] = Symbolics.derivative(defn.f, s_pr[lp_r]; simplify=true)
+        fdp_sparse_num[lp_r] = Symbolics.derivative(fixup_defn_f_num, p1; simplify=true)
+
+        # fdp_sparse_num[lp_r] = Symbolics.derivative(defn.f, s_pr[lp_r]; simplify=true)
     end
     cedp_sparse_num = Vector{Vector{Num}}(undef, r)
     for lp_r=1:r        
-        cedp_sparse_num[lp_r] = Symbolics.derivative(defn.ce, s_pr[lp_r]; simplify=true)
+        cedp_sparse_num[lp_r] = Symbolics.derivative(fixup_defn_ce_num, p1; simplify=true)
+        # cedp_sparse_num[lp_r] = Symbolics.derivative(defn.ce, s_pr[lp_r]; simplify=true)
     end
     cidp_sparse_num = Vector{Vector{Num}}(undef, r)
-    for lp_r=1:r        
-        cidp_sparse_num[lp_r] = Symbolics.derivative(defn.ci, s_pr[lp_r]; simplify=true)
+    for lp_r=1:r   
+        cidp_sparse_num[lp_r] = Symbolics.derivative(fixup_defn_ci_num, p1; simplify=true)
+        # cidp_sparse_num[lp_r] = Symbolics.derivative(defn.ci, s_pr[lp_r]; simplify=true)
     end
     Fdp_sparse_num = Vector{Matrix{Num}}(undef, r)
     for lp_r=1:r        
-        Fdp_sparse_num[lp_r] = Symbolics.derivative(defn.F, s_pr[lp_r]; simplify=true)
+        Fdp_sparse_num[lp_r] = Symbolics.derivative(fixup_defn_F_num, p1; simplify=true)
+        # Fdp_sparse_num[lp_r] = Symbolics.derivative(defn.F, s_pr[lp_r]; simplify=true)
     end
 
     println("fdp: ", fdp_sparse_num)
@@ -77,25 +140,34 @@ function mpccmodel_setup_symdiff_sparse(config::MPCCModelConfig)
     println("Fdp: ", Fdp_sparse_num)
 
 
-    # graddp entries
+    # graddp entries 
     gradfdp_sparse_num = Vector{SparseMatrixCSC}(undef, r)
+    sparsity_gradfdp =  Vector{SparseMatrixCSC}(undef, r)
     for lp_r=1:r
-        gradfdp_sparse_num[lp_r] = transpose( Symbolics.sparsejacobian([fdp_sparse_num[lp_r]], s_x) )        
+        gradfdp_sparse_num[lp_r] = Symbolics.sparsejacobian([fdp_sparse_num[lp_r]], s_x)
+        sparsity_gradfdp[lp_r] = Symbolics.jacobian_sparsity([fdp_sparse_num[lp_r]], s_x)
     end
     gradcedp_sparse_num = Vector{SparseMatrixCSC}(undef, r)
+    sparsity_gradcedp = Vector{SparseMatrixCSC}(undef, r)
     for lp_r=1:r
-        gradcedp_sparse_num[lp_r] = transpose( Symbolics.sparsejacobian( cedp_sparse_num[lp_r], s_x ) )
+        gradcedp_sparse_num[lp_r] = Symbolics.sparsejacobian( cedp_sparse_num[lp_r], s_x )
+        sparsity_gradcedp[lp_r] = Symbolics.jacobian_sparsity( cedp_sparse_num[lp_r], s_x )
     end
     gradcidp_sparse_num = Vector{SparseMatrixCSC}(undef, r)
+    sparsity_gradcidp = Vector{SparseMatrixCSC}(undef, r)
     for lp_r=1:r
-        gradcidp_sparse_num[lp_r] = transpose( Symbolics.sparsejacobian( cidp_sparse_num[lp_r], s_x ) )
+        gradcidp_sparse_num[lp_r] = Symbolics.sparsejacobian( cidp_sparse_num[lp_r], s_x )
+        sparsity_gradcidp[lp_r] = Symbolics.jacobian_sparsity( cidp_sparse_num[lp_r], s_x )
     end
     gradFdp_sparse_num = Vector{Matrix{SparseMatrixCSC}}(undef, r)
+    sparsity_gradFdp = Vector{Matrix{SparseMatrixCSC}}(undef, r)
     for lp_r=1:r
         gradFdp_sparse_num[lp_r] = Matrix{SparseMatrixCSC}(undef, l, q)
+        sparsity_gradFdp[lp_r] = Matrix{SparseMatrixCSC}(undef, l, q)
         for lp_q=1:q
             for lp_l=1:l
-                gradFdp_sparse_num[lp_r][lp_l, lp_q] = transpose( Symbolics.sparsejacobian( [ Fdp_sparse_num[lp_r][lp_l, lp_q] ], s_x ) )
+                gradFdp_sparse_num[lp_r][lp_l, lp_q] = Symbolics.sparsejacobian( [ Fdp_sparse_num[lp_r][lp_l, lp_q] ], s_x )
+                sparsity_gradFdp[lp_r][lp_l, lp_q] = Symbolics.jacobian_sparsity( [ Fdp_sparse_num[lp_r][lp_l, lp_q] ], s_x )
             end
         end
     end
@@ -104,215 +176,329 @@ function mpccmodel_setup_symdiff_sparse(config::MPCCModelConfig)
     println("gradcedp: ", gradcedp_sparse_num)
     println("gradcidp: ", gradcidp_sparse_num)
     println("gradFdp: ", gradFdp_sparse_num)
+    println("sparsity_gradfdp: ", sparsity_gradfdp)
+    println("sparsity_gradcedp: ", sparsity_gradcedp)
+    println("sparsity_gradcidp: ", sparsity_gradcidp)
+    println("sparsity_gradFdp: ", sparsity_gradFdp)
+
+    # Compiled versions
+    gradf_sparse_fn = build_function(gradf_sparse_num, s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false)
+    gradce_sparse_fn = build_function(gradce_sparse_num, s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false)
+    gradci_sparse_fn = build_function(gradci_sparse_num, s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false)
+    gradF_sparse_fn = [ build_function(gradF_sparse_num[lp_l, lp_q], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_l=1:l, lp_q=1:q ]
+    # gradF_sparse_fn = Matrix(undef, l, q)       # TODO specify type here    
+    # for lp_q=1:q
+    #     for lp_l=1:l
+    #         gradF_sparse_fn[lp_l, lp_q] = build_function(gradF_sparse_num[lp_l, lp_q], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false)
+    #     end
+    # end
+
+    hessf_sparse_fn = build_function(hessf_sparse_num, s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false)
+    hessce_sparse_fn = [ build_function(hessce_sparse_num[lp_me], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_me=1:me ]
+    hessci_sparse_fn = [ build_function(hessci_sparse_num[lp_mi], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_mi=1:mi ]
+    hessF_sparse_fn = [ build_function(hessF_sparse_num[lp_l, lp_q], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_l=1:l, lp_q=1:q ]
+
+    fdp_sparse_fn= [ build_function(fdp_sparse_num[lp_r], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_r=1:r ]
+    cedp_sparse_fn= [ build_function(cedp_sparse_num[lp_r], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_r=1:r ]
+    cidp_sparse_fn= [ build_function(cidp_sparse_num[lp_r], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_r=1:r ]
+    Fdp_sparse_fn= [ build_function(Fdp_sparse_num[lp_r], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_r=1:r ]
+
+    gradfdp_sparse_fn = [ build_function(gradfdp_sparse_num[lp_r], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_r=1:r ]
+    gradcedp_sparse_fn = [ build_function(gradcedp_sparse_num[lp_r], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_r=1:r ]
+    gradcidp_sparse_fn = [ build_function(gradcidp_sparse_num[lp_r], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_r=1:r ]
+    gradFdp_sparse_fn = [ [ build_function(gradcidp_sparse_num[lp_r][lp_l, lp_q], s_x, s_pr, s_ps; expression=Val{false}, linenumbers=false) for lp_l=1:l, lp_q=1:q ] for lp_r=1:r ]
 
     # f, ce, ci, F all return usual dense vectors/matrices because they are, well, dense.
 
     # Full f functions (really just converting a 1 element vector to a scalar)
-    function local_f(x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}) where {S <: Real, T <: Real}
+    function local_f(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
         return fns.f(x, pr, ps)[1]
     end
 
 
 
     # Full ce functions
-    function local_ce(x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}) where {S <: Real, T <: Real}   # ::Vector{S}
+    function local_ce(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}   # ::Vector{S}
         return fns.ce(x, pr, ps)
     end
 
 
 
-    # Indexed ce functions
-    function local_ce(x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}, idxs_ce::Vector{Int64}) where {S <: Real, T <: Real} # ::Vector{S}
-        return mm_fd_dn_ce_i(dimspec, fns.ce_i, x, pr, ps, idxs_ce)
-    end
-    
-
 
     # Full ci functions
-    function local_ci(x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}) where {S <: Real, T <: Real}  # ::Vector{S}
+    function local_ci(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}  # ::Vector{S}
         return fns.ci(x, pr, ps)
     end
 
 
-    # Indexed ci functions
-    function local_ci(x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}, idxs_ci::Vector{Int64}) where {S <: Real, T <: Real}  # ::Vector{S}
-        return mm_fd_dn_ci_i(dimspec, fns.ci_i, x, pr, ps, idxs_ci)
-    end
-    
-
-
 
     # Full F functions
-    function local_F(x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}) where {S <: Real, T <: Real}  # ::Matrix{S}
+    function local_F(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}  # ::Matrix{S}
         return fns.F(x, pr, ps)
     end
 
 
 
-
-    # Indexed F functions; NOTE, these yeild a vector in the order that the (l,q) index tuples were in!
-    function local_F(x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}, idxs_F::Vector{Tuple{Int64,Int64}}) where {S <: Real, T <: Real}  # ::Vector{S}
-        return mm_fd_dn_F_i(dimspec, fns.F_i, x, pr, ps, idxs_F)
-    end
-    
-
-
-
     # gradf functions
-    gradf_sparse_fn = build_function(gradf_sparse_num, x, pr, ps; expression=Val{false})
-
-    function local_gradf(x0::Vector{S}, pr0::Vector{T}, ps0::Vector{Int64}) where {S <: Real, T <: Real}
-        return gradf_sparse_fn[1](x0, pr0, ps0)
+    function local_gradf(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return gradf_sparse_fn[1](x, pr, ps)
     end
 
 
-
-    # Development placeholder functions
-    # local_f(x0::Vector) = sum(x)
-    # function local_f!(out_f::AbstractVector, x0::Vector) 
-    #     out_f[1] = sum(x)
-    #     return nothing
-    # end
-
-    # local_ce(x0::Vector) = sum(x)
-    # function local_ce!(out_ce::AbstractVector, x0::Vector) 
-    #     out_ce[1] = sum(x)
-    #     return nothing
-    # end
-
-    # local_ci(x0::Vector) = sum(x)
-    # function local_ci!(out_ci::AbstractVector, x0::Vector) 
-    #     out_ci[1] = sum(x)
-    #     return nothing
-    # end
-
-    # local_F(x0::Vector) = sum(x)
-    # function local_F!(out_F::AbstractVector, x0::Vector) 
-    #     out_F[1] = sum(x)
-    #     return nothing
-    # end
-
-    # local_gradf(x0::Vector) = sum(x)
-    # function local_gradf!(out_gradf::AbstractVector, x0::Vector) 
-    #     out_gradf[1] = sum(x)
-    #     return nothing
-    # end
-    
-    local_gradce(x0::Vector) = sum(x)
-    function local_gradce!(out_gradce::AbstractVector, x0::Vector) 
-        out_gradce[1] = sum(x)
-        return nothing
-    end
-    
-    local_gradci(x0::Vector) = sum(x)
-    function local_gradci!(out_gradci::AbstractVector, x0::Vector) 
-        out_gradci[1] = sum(x)
-        return nothing
-    end
-    
-    local_gradF(x0::Vector) = sum(x)
-    function local_gradF!(out_gradF::AbstractVector, x0::Vector) 
-        out_gradF[1] = sum(x)
-        return nothing
-    end
-    
-    local_hessf(x0::Vector) = sum(x)
-    function local_hessf!(out_hessf::AbstractVector, x0::Vector) 
-        out_hessf[1] = sum(x)
-        return nothing
-    end
-    
-    local_hessce(x0::Vector) = sum(x)
-    function local_hessce!(out_hessce::AbstractVector, x0::Vector) 
-        out_hessce[1] = sum(x)
-        return nothing
-    end
-    
-    local_hessci(x0::Vector) = sum(x)
-    function local_hessci!(out_hessci::AbstractVector, x0::Vector) 
-        out_hessci[1] = sum(x)
-        return nothing
-    end
-    
-    local_hessF(x0::Vector) = sum(x)
-    function local_hessF!(out_hessF::AbstractVector, x0::Vector) 
-        out_hessF[1] = sum(x)
-        return nothing
-    end
-    
-    local_fdp(x0::Vector) = sum(x)
-    function local_fdp!(out_fdp::AbstractVector, x0::Vector) 
-        out_fdp[1] = sum(x)
-        return nothing
-    end
-    
-    local_cedp(x0::Vector) = sum(x)
-    function local_cedp!(out_cedp::AbstractVector, x0::Vector) 
-        out_cedp[1] = sum(x)
-        return nothing
-    end
-    
-    local_cidp(x0::Vector) = sum(x)
-    function local_cidp!(out_cidp::AbstractVector, x0::Vector) 
-        out_cidp[1] = sum(x)
-        return nothing
-    end
-    
-    local_Fdp(x0::Vector) = sum(x)
-    function local_Fdp!(out_Fdp::AbstractVector, x0::Vector) 
-        out_Fdp[1] = sum(x)
-        return nothing
+    # gradce functions
+    function local_gradce(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return gradce_sparse_fn[1](x, pr, ps)
     end
 
-    local_gradfdp(x0::Vector) = sum(x)
-    function local_gradfdp!(out_gradfdp::AbstractVector, x0::Vector) 
-        out_gradfdp[1] = sum(x)
-        return nothing
+
+    # gradci functions
+    function local_gradci(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return gradci_sparse_fn[1](x, pr, ps)
     end
     
-    local_gradcedp(x0::Vector) = sum(x)
-    function local_gradcedp!(out_gradcedp::AbstractVector, x0::Vector) 
-        out_gradcedp[1] = sum(x)
-        return nothing
-    end
-    
-    local_gradcidp(x0::Vector) = sum(x)
-    function local_gradcidp!(out_gradcidp::AbstractVector, x0::Vector) 
-        out_gradcidp[1] = sum(x)
-        return nothing
-    end
-    
-    local_gradFdp(x0::Vector) = sum(x)
-    function local_gradFdp!(out_gradFdp::AbstractVector, x0::Vector) 
-        out_gradFdp[1] = sum(x)
-        return nothing
+
+    # gradF functions
+    function local_gradF(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}                
+        return mm_sym_sp_gradF(dimspec, gradF_sparse_fn, x, pr, ps)
     end
 
-    # TODO need to use the [1] format
-    return MPCCModel(
-            config,
-            local_f, missing,
-            local_ce, missing,
-            local_ci, missing,
-            local_F, missing,
-            local_gradf, missing,
-            local_gradce, missing,
-            local_gradci, missing,
-            local_gradF, missing,
-            local_hessf, missing,
-            local_hessce, missing,
-            local_hessci, missing,
-            local_hessF, missing,
-            local_fdp, missing,
-            local_cedp, missing,
-            local_cidp, missing,
-            local_Fdp, missing,
-            local_gradfdp, missing,
-            local_gradcedp, missing,
-            local_gradcidp, missing,
-            local_gradFdp, missing
-        )
+
+    # hessf functions
+    function local_hessf(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return hessf_sparse_fn[1](x, pr, ps)
+    end
+
+
+    # hessce functions
+    function local_hessce(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}                
+        return mm_sym_sp_hessce(dimspec, hessce_sparse_fn, x, pr, ps)
+    end
+
+
+    # hessci functions
+    function local_hessci(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}                
+        return mm_sym_sp_hessci(dimspec, hessci_sparse_fn, x, pr, ps)
+    end
+
+
+    # hessF functions
+    function local_hessF(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}                
+        return mm_sym_sp_hessF(dimspec, hessF_sparse_fn, x, pr, ps)
+    end
+
+
+    # fdp functions
+    function local_fdp(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return mm_sym_sp_fdp(dimspec, fdp_sparse_fn, x, pr, ps)
+    end
+
+
+    # cedp functions
+    function local_cedp(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return mm_sym_sp_cedp(dimspec, cedp_sparse_fn, x, pr, ps)
+    end
+
+
+    # cedp functions
+    function local_cidp(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return mm_sym_sp_cidp(dimspec, cidp_sparse_fn, x, pr, ps)
+    end
+
+
+    # Fdp functions
+    function local_Fdp(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return mm_sym_sp_Fdp(dimspec, Fdp_sparse_fn, x, pr, ps)
+    end
+
+
+    # gradfdp functions
+    function local_gradfdp(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return mm_sym_sp_gradfdp(dimspec, gradfdp_sparse_fn, x, pr, ps)
+    end
+
+
+    # gradcedp functions
+    function local_gradcedp(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return mm_sym_sp_gradcedp(dimspec, gradcedp_sparse_fn, x, pr, ps)
+    end
+
+
+    # gradcedp functions
+    function local_gradcidp(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return mm_sym_sp_gradcidp(dimspec, gradcidp_sparse_fn, x, pr, ps)
+    end
+
+
+    # gradFdp functions
+    function local_gradFdp(x::Vector{S}, pr::Vector{T}, ps::Vector{Int64}) where {S <: Real, T <: Real}
+        return mm_sym_sp_gradFdp(dimspec, gradFdp_sparse_fn, x, pr, ps)
+    end
+
+    return MPCCModelSparseSym(
+        config,
+        sparsity_gradf,
+        sparsity_gradce,
+        sparsity_gradci,
+        sparsity_gradF,
+        sparsity_hessf,
+        sparsity_hessce,
+        sparsity_hessci,
+        sparsity_hessF,
+        sparsity_gradfdp,
+        sparsity_gradcedp,
+        sparsity_gradcidp,
+        sparsity_gradFdp,
+        gradf_sparse_num,
+        gradce_sparse_num,
+        gradci_sparse_num,
+        gradF_sparse_num,
+        hessf_sparse_num,
+        hessce_sparse_num,
+        hessci_sparse_num,
+        hessF_sparse_num,
+        fdp_sparse_num,
+        cedp_sparse_num,
+        cidp_sparse_num,
+        Fdp_sparse_num,
+        gradfdp_sparse_num,
+        gradcedp_sparse_num,
+        gradcidp_sparse_num,
+        gradFdp_sparse_num,
+        local_f, missing,
+        local_ce, missing,
+        local_ci, missing,
+        local_F, missing,
+        local_gradf, missing,
+        local_gradce, missing,
+        local_gradci, missing,
+        local_gradF, missing,
+        local_hessf, missing,
+        local_hessce, missing,
+        local_hessci, missing,
+        local_hessF, missing,
+        local_fdp, missing,
+        local_cedp, missing,
+        local_cidp, missing,
+        local_Fdp, missing,
+        local_gradfdp, missing,
+        local_gradcedp, missing,
+        local_gradcidp, missing,
+        local_gradFdp, missing
+
+    )
+
 end
 
 
+# NOTE don't restrict the ::AbstractMatrix or AbstractVector since Symbolics makes Tuples of RGFs
+
+
+function mm_sym_sp_gradF(dimspec::MPCCDimSpec, fn_gradF::AbstractMatrix, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack n, l, q = dimspec
+    gradF = [ fn_gradF[lp_l, lp_q][1](x, pr, ps) for lp_l in 1:l, lp_q in 1:q ]        # Call each (l,q) function, the [1] is the non-mutating version
+    return gradF
+end
+
+
+
+function mm_sym_sp_hessce(dimspec::MPCCDimSpec, fn_hessce::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack me = dimspec
+    hessce = [ fn_hessce[lp_me][1](x, pr, ps) for lp_me in 1:me ]
+    return hessce
+end
+
+
+function mm_sym_sp_hessci(dimspec::MPCCDimSpec, fn_hessci::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack mi = dimspec
+    hessci = [ fn_hessci[lp_mi][1](x, pr, ps) for lp_mi in 1:mi ]
+    return hessci
+end
+
+
+function mm_sym_sp_hessF(dimspec::MPCCDimSpec, fn_hessF::AbstractMatrix, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack n, l, q = dimspec
+    hessF = [ fn_hessF[lp_l, lp_q][1](x, pr, ps) for lp_l in 1:l, lp_q in 1:q ]        # Call each (l,q) function, the [1] is the non-mutating version
+    return hessF
+end
+
+
+
+function mm_sym_sp_fdp(dimspec::MPCCDimSpec, fn_fdp::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack r = dimspec
+    fdp = [ fn_fdp[lp_r][1](x, pr, ps) for lp_r in 1:r ]
+    return fdp
+end
+
+
+function mm_sym_sp_cedp(dimspec::MPCCDimSpec, fn_cedp::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack r = dimspec
+    cedp = [ fn_cedp[lp_r][1](x, pr, ps) for lp_r in 1:r ]
+    return cedp
+end
+
+
+function mm_sym_sp_cidp(dimspec::MPCCDimSpec, fn_cidp::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack r = dimspec
+    cidp = [ fn_cidp[lp_r][1](x, pr, ps) for lp_r in 1:r ]
+    return cidp
+end
+
+
+function mm_sym_sp_Fdp(dimspec::MPCCDimSpec, fn_Fdp::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack r = dimspec
+    Fdp = [ fn_Fdp[lp_r][1](x, pr, ps) for lp_r in 1:r ]
+    return Fdp
+end
+
+
+
+function mm_sym_sp_gradfdp(dimspec::MPCCDimSpec, fn_gradfdp::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack r = dimspec
+    gradfdp = [ fn_gradfdp[lp_r][1](x, pr, ps) for lp_r in 1:r ]
+    return gradfdp
+end
+
+
+function mm_sym_sp_gradcedp(dimspec::MPCCDimSpec, fn_gradcedp::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack r = dimspec
+    gradcedp = [ fn_gradcedp[lp_r][1](x, pr, ps) for lp_r in 1:r ]
+    return gradcedp
+end
+
+
+function mm_sym_sp_gradcidp(dimspec::MPCCDimSpec, fn_gradcidp::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack r = dimspec
+    gradcidp = [ fn_gradcidp[lp_r][1](x, pr, ps) for lp_r in 1:r ]
+    return gradcidp
+end
+
+
+function mm_sym_sp_gradFdp(dimspec::MPCCDimSpec, fn_gradFdp::AbstractVector, x::AbstractVector{S}, pr::AbstractVector{T}, ps::AbstractVector{Int64}) where {S <: Real, T <: Real}
+    @unpack l, q, r = dimspec
+    gradFdp = [ [ fn_gradFdp[lp_r][lp_l, lp_q][1](x, pr, ps) for lp_l=1:l, lp_q=1:q ] for lp_r in 1:r ]
+    return gradFdp
+end
+
+
+# gradfdp_sparse_num = Vector{SparseMatrixCSC}(undef, r)
+# for lp_r=1:r
+#     gradfdp_sparse_num[lp_r] = Symbolics.sparsejacobian([fdp_sparse_num[lp_r]], s_x)
+# end
+# gradcedp_sparse_num = Vector{SparseMatrixCSC}(undef, r)
+# for lp_r=1:r
+#     gradcedp_sparse_num[lp_r] = Symbolics.sparsejacobian( cedp_sparse_num[lp_r], s_x )
+# end
+# gradcidp_sparse_num = Vector{SparseMatrixCSC}(undef, r)
+# for lp_r=1:r
+#     gradcidp_sparse_num[lp_r] = Symbolics.sparsejacobian( cidp_sparse_num[lp_r], s_x )
+# end
+# gradFdp_sparse_num = Vector{Matrix{SparseMatrixCSC}}(undef, r)
+# for lp_r=1:r
+#     gradFdp_sparse_num[lp_r] = Matrix{SparseMatrixCSC}(undef, l, q)
+#     for lp_q=1:q
+#         for lp_l=1:l
+#             gradFdp_sparse_num[lp_r][lp_l, lp_q] = Symbolics.sparsejacobian( [ Fdp_sparse_num[lp_r][lp_l, lp_q] ], s_x )
+#         end
+#     end
+# end
 

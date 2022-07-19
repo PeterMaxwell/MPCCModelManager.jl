@@ -564,7 +564,7 @@ function mpccmodel_setup_forwarddiff_dense(config::MPCCModelConfig)
 
 
 
-    return MPCCModel(   config,
+    return MPCCModelDenseForwardDiff(   config,
                         local_f, local_f!,
                         local_ce, local_ce!,
                         local_ci, local_ci!,
